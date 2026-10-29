@@ -17,19 +17,26 @@ def parse_for_all_objects(html, preceding_regex):
     """
     result = []
     regex = re.compile(preceding_regex)
+    decoder = json.JSONDecoder()
+    trivia = re.compile(
+        r'(?:[ \t\v\f\r\n\u00a0\u1680\u2000-\u200a'
+        r'\u2028\u2029\u202f\u205f\u3000\ufeff]'
+        r'|//[^\r\n\u2028\u2029]*|/\*[\s\S]*?\*/)*'
+    )
     match_iter = regex.finditer(html)
     for match in match_iter:
-        if match:
-            start_index = match.end()
+        start_index = trivia.match(html, match.end()).end()
+        # Only trivia may separate the prefix from the object.
+        if start_index == len(html) or html[start_index] not in '{[':
+            continue
+        try:
             try:
+                obj, _ = decoder.raw_decode(html, start_index)
+            except json.JSONDecodeError:
                 obj = parse_for_object_from_startpoint(html, start_index)
-            except HTMLParseError:
-                # Some of the instances might fail because set is technically
-                # a method of the ytcfg object. We'll skip these since they
-                # don't seem relevant at the moment.
-                continue
-            else:
-                result.append(obj)
+        except (HTMLParseError, ValueError, TypeError, RecursionError):
+            continue
+        result.append(obj)
 
     if not result:
         raise HTMLParseError(f'No matches for regex {preceding_regex}')
